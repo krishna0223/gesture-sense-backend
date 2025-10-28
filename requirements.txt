@@ -1,0 +1,7 @@
+flask
+opencv-python
+mediapipe==0.10.14
+numpy
+tensorflow-cpu==2.16.1
+scikit-learn
+gunicorn
