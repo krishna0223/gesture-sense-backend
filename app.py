@@ -82,7 +82,7 @@ def home():
     return jsonify({"message": "ASL backend is running!"}), 200
 
 
-@app.route('/predict', methods=['POST'])
+@app.route('/predict', methods=['GET'])
 def predict():
     """Receives base64-encoded image from frontend, returns label + confidence"""
     global last_prediction
@@ -129,6 +129,7 @@ def predict():
 # ========================================================================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
 
 
 
