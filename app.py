@@ -7,6 +7,7 @@ import pickle
 import threading
 from collections import deque
 from flask_cors import CORS
+import base64
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -81,11 +82,16 @@ def smooth_predictions(new_pred):
 def home():
     return jsonify({"message": "ASL backend is running!"}), 200
 
-
-@app.route('/predict', methods=['POST'])
+@app.route('/predict', methods=['GET', 'POST'])
 def predict():
-    """Receives base64-encoded image from frontend, returns label + confidence"""
+    """Receives base64-encoded image from frontend (POST), returns label + confidence.
+    Responds to GET with a status message for health checks.
+    """
     global last_prediction
+
+    if request.method == 'GET':
+        # Health check response
+        return jsonify({"message": "Predict endpoint is working! Send a POST request with image data."}), 200
 
     if model is None or label_encoder is None:
         return jsonify({"error": "Model not loaded"}), 500
@@ -96,7 +102,11 @@ def predict():
             return jsonify({"error": "No image provided"}), 400
 
         # Decode base64 image
-        img_data = base64.b64decode(data['image'].split(',')[1])
+        try:
+            img_data = base64.b64decode(data['image'].split(',')[1])
+        except Exception as e:
+            return jsonify({"error": "Invalid base64 image format"}), 400
+
         nparr = np.frombuffer(img_data, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         frame = cv2.resize(frame, (TARGET_SIZE, TARGET_SIZE))
@@ -128,6 +138,7 @@ def predict():
 # ========================================================================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
 
 
 
