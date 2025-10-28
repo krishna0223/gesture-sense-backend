@@ -5,9 +5,9 @@ import mediapipe as mp
 import tensorflow as tf
 import pickle
 import threading
+import base64  # ← ADD THIS
 from collections import deque
 from flask_cors import CORS
-import base64
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -31,7 +31,7 @@ lock = threading.Lock()
 # MEDIAPIPE + MODEL LOADING
 # ========================================================================
 mp_hands = mp.solutions.hands.Hands(
-    static_image_mode=True,  # only one image at a time now
+    static_image_mode=False,  # ← CHANGED TO FALSE for video stream
     max_num_hands=1,
     min_detection_confidence=CONFIDENCE_THRESHOLD,
     min_tracking_confidence=TRACKING_CONFIDENCE
@@ -82,15 +82,22 @@ def smooth_predictions(new_pred):
 def home():
     return jsonify({"message": "ASL backend is running!"}), 200
 
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({
+        "status": "healthy",
+        "model_loaded": model is not None,
+        "label_encoder_loaded": label_encoder is not None
+    }), 200
+
+
 @app.route('/predict', methods=['GET', 'POST'])
 def predict():
-    """Receives base64-encoded image from frontend (POST), returns label + confidence.
-    Responds to GET with a status message for health checks.
-    """
+    """Receives base64-encoded image from frontend, returns label + confidence"""
     global last_prediction
 
     if request.method == 'GET':
-        # Health check response
         return jsonify({"message": "Predict endpoint is working! Send a POST request with image data."}), 200
 
     if model is None or label_encoder is None:
@@ -105,10 +112,14 @@ def predict():
         try:
             img_data = base64.b64decode(data['image'].split(',')[1])
         except Exception as e:
-            return jsonify({"error": "Invalid base64 image format"}), 400
+            return jsonify({"error": f"Invalid base64 image format: {str(e)}"}), 400
 
         nparr = np.frombuffer(img_data, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            return jsonify({"error": "Failed to decode image"}), 400
+            
         frame = cv2.resize(frame, (TARGET_SIZE, TARGET_SIZE))
 
         # Extract landmarks
@@ -138,11 +149,3 @@ def predict():
 # ========================================================================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-
-
-
-
-
-
-
-
