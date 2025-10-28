@@ -82,7 +82,7 @@ def home():
     return jsonify({"message": "ASL backend is running!"}), 200
 
 
-@app.route('/predict', methods=['GET'])
+@app.route('/predict', methods=['POST'])
 def predict():
     """Receives base64-encoded image from frontend, returns label + confidence"""
     global last_prediction
@@ -92,7 +92,7 @@ def predict():
 
     try:
         data = request.get_json()
-        if 'image' not in data:
+        if not data or 'image' not in data:
             return jsonify({"error": "No image provided"}), 400
 
         # Decode base64 image
@@ -120,7 +120,6 @@ def predict():
         return jsonify(result)
 
     except Exception as e:
-        print(f"❌ Prediction error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -129,6 +128,7 @@ def predict():
 # ========================================================================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
 
 
 
