@@ -1,4 +1,4 @@
-from flask import Flask, render_template, Response, jsonify
+from flask import Flask, render_template, Response, jsonify, request
 import cv2
 import numpy as np
 import mediapipe as mp
@@ -129,6 +129,7 @@ def predict():
 # ========================================================================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
 
 
 
