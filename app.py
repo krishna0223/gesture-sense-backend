@@ -5,7 +5,7 @@ import mediapipe as mp
 import tensorflow as tf
 import pickle
 import threading
-import base64  # ← ADD THIS
+import base64
 from collections import deque
 from flask_cors import CORS
 
@@ -16,8 +16,8 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 # CONFIGURATION
 # ========================================================================
 TARGET_SIZE = 200
-CONFIDENCE_THRESHOLD = 0.5
-TRACKING_CONFIDENCE = 0.5
+CONFIDENCE_THRESHOLD = 0.5  # Lowered for better detection
+TRACKING_CONFIDENCE = 0.5   # Lowered for better detection
 SMOOTHING_WINDOW = 5
 
 # ========================================================================
@@ -31,7 +31,7 @@ lock = threading.Lock()
 # MEDIAPIPE + MODEL LOADING
 # ========================================================================
 mp_hands = mp.solutions.hands.Hands(
-    static_image_mode=False,  # ← CHANGED TO FALSE for video stream
+    static_image_mode=False,
     max_num_hands=1,
     min_detection_confidence=CONFIDENCE_THRESHOLD,
     min_tracking_confidence=TRACKING_CONFIDENCE
@@ -43,6 +43,7 @@ try:
     with open('model/label_encoder.pkl', 'rb') as f:
         label_encoder = pickle.load(f)
     print("✅ Model loaded successfully!")
+    print(f"📊 Model expects input shape: {model.input_shape}")
 except Exception as e:
     print(f"❌ Model load error: {e}")
     model, label_encoder = None, None
@@ -53,34 +54,39 @@ except Exception as e:
 # ========================================================================
 def extract_landmarks(frame):
     """Extract hand landmarks from frame"""
-    # Convert BGR to RGB
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    
-    print(f"🎨 RGB frame: shape={rgb.shape}, min={rgb.min()}, max={rgb.max()}")
-    
-    # Process with MediaPipe
-    result = mp_hands.process(rgb)
-    
-    if not result.multi_hand_landmarks:
-        print("👋 No hands detected by MediaPipe")
-        return None
-    
-    print(f"👋 Detected {len(result.multi_hand_landmarks)} hand(s)")
-    
-    for hand_landmarks in result.multi_hand_landmarks:
+    try:
+        # Convert BGR to RGB
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Process with MediaPipe
+        result = mp_hands.process(rgb)
+        
+        if not result.multi_hand_landmarks:
+            return None
+        
+        # Get first hand's landmarks
+        hand_landmarks = result.multi_hand_landmarks[0]
         landmark_list = []
+        
         for lm in hand_landmarks.landmark:
             landmark_list.extend([lm.x, lm.y, lm.z])
         
         landmarks_array = np.nan_to_num(np.array(landmark_list, dtype=np.float32))
-        print(f"📊 Landmarks extracted: {len(landmark_list)} values, shape={landmarks_array.shape}")
+        
+        # Verify we have the correct number of landmarks (21 landmarks * 3 coordinates = 63)
+        if len(landmarks_array) != 63:
+            print(f"⚠️ Unexpected landmark count: {len(landmarks_array)}")
+            return None
+            
         return landmarks_array
-    
-    return None
-
+        
+    except Exception as e:
+        print(f"❌ Error in extract_landmarks: {e}")
+        return None
 
 
 def smooth_predictions(new_pred):
+    """Smooth predictions over time"""
     prediction_history.append(new_pred)
     if len(prediction_history) < SMOOTHING_WINDOW:
         return new_pred
@@ -96,7 +102,7 @@ def smooth_predictions(new_pred):
 
 @app.route('/')
 def home():
-    return jsonify({"message": "ASL backend is running!"}), 200
+    return render_template('index.html')
 
 
 @app.route('/health', methods=['GET'])
@@ -122,35 +128,36 @@ def predict():
     try:
         data = request.get_json()
         if not data or 'image' not in data:
+            print("❌ No image in request")
             return jsonify({"error": "No image provided"}), 400
 
         # Decode base64 image
         try:
             img_data = base64.b64decode(data['image'].split(',')[1])
         except Exception as e:
+            print(f"❌ Base64 decode error: {e}")
             return jsonify({"error": f"Invalid base64 image format: {str(e)}"}), 400
 
         nparr = np.frombuffer(img_data, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
         if frame is None:
+            print("❌ Failed to decode image")
             return jsonify({"error": "Failed to decode image"}), 400
         
-        # Debug: Log frame info
-        print(f"📸 Frame received: shape={frame.shape}, dtype={frame.dtype}")
+        print(f"📸 Frame received: {frame.shape}")
         
-        # Resize frame
-        frame = cv2.resize(frame, (TARGET_SIZE, TARGET_SIZE))
-        print(f"📐 Resized frame: shape={frame.shape}")
+        # Resize to target size
+        frame_resized = cv2.resize(frame, (TARGET_SIZE, TARGET_SIZE))
 
         # Extract landmarks
-        landmarks = extract_landmarks(frame)
+        landmarks = extract_landmarks(frame_resized)
         
         if landmarks is None:
-            print("❌ No hand detected in frame")
-            return jsonify({"label": None, "confidence": 0.0})
+            print("👋 No hand detected")
+            return jsonify({"label": None, "confidence": 0.0}), 200
         
-        print(f"✅ Hand detected! Landmarks shape: {landmarks.shape}")
+        print(f"✅ Hand detected! Landmarks: {landmarks.shape}")
 
         # Predict
         input_data = np.expand_dims(landmarks, axis=0)
@@ -159,13 +166,15 @@ def predict():
         label = label_encoder.inverse_transform([pred_class])[0]
         confidence = float(np.max(pred))
         
-        print(f"🔮 Prediction: {label} ({confidence:.2%})")
+        print(f"🔮 Raw prediction: {label} @ {confidence:.2%}")
 
         result = smooth_predictions({'label': label, 'confidence': confidence})
+        print(f"📊 Smoothed prediction: {result['label']} @ {result['confidence']:.2%}")
+        
         with lock:
             last_prediction = result
 
-        return jsonify(result)
+        return jsonify(result), 200
 
     except Exception as e:
         print(f"❌ Error in predict: {str(e)}")
@@ -178,6 +187,4 @@ def predict():
 # MAIN
 # ========================================================================
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
-
-
+    app.run(host='0.0.0.0', port=5000, debug=True)
