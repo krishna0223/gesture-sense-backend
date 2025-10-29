@@ -52,16 +52,32 @@ except Exception as e:
 # FUNCTIONS
 # ========================================================================
 def extract_landmarks(frame):
+    """Extract hand landmarks from frame"""
+    # Convert BGR to RGB
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    
+    print(f"🎨 RGB frame: shape={rgb.shape}, min={rgb.min()}, max={rgb.max()}")
+    
+    # Process with MediaPipe
     result = mp_hands.process(rgb)
+    
     if not result.multi_hand_landmarks:
+        print("👋 No hands detected by MediaPipe")
         return None
+    
+    print(f"👋 Detected {len(result.multi_hand_landmarks)} hand(s)")
+    
     for hand_landmarks in result.multi_hand_landmarks:
         landmark_list = []
         for lm in hand_landmarks.landmark:
             landmark_list.extend([lm.x, lm.y, lm.z])
-        return np.nan_to_num(np.array(landmark_list, dtype=np.float32))
+        
+        landmarks_array = np.nan_to_num(np.array(landmark_list, dtype=np.float32))
+        print(f"📊 Landmarks extracted: {len(landmark_list)} values, shape={landmarks_array.shape}")
+        return landmarks_array
+    
     return None
+
 
 
 def smooth_predictions(new_pred):
@@ -119,13 +135,22 @@ def predict():
         
         if frame is None:
             return jsonify({"error": "Failed to decode image"}), 400
-            
+        
+        # Debug: Log frame info
+        print(f"📸 Frame received: shape={frame.shape}, dtype={frame.dtype}")
+        
+        # Resize frame
         frame = cv2.resize(frame, (TARGET_SIZE, TARGET_SIZE))
+        print(f"📐 Resized frame: shape={frame.shape}")
 
         # Extract landmarks
         landmarks = extract_landmarks(frame)
+        
         if landmarks is None:
+            print("❌ No hand detected in frame")
             return jsonify({"label": None, "confidence": 0.0})
+        
+        print(f"✅ Hand detected! Landmarks shape: {landmarks.shape}")
 
         # Predict
         input_data = np.expand_dims(landmarks, axis=0)
@@ -133,6 +158,8 @@ def predict():
         pred_class = np.argmax(pred)
         label = label_encoder.inverse_transform([pred_class])[0]
         confidence = float(np.max(pred))
+        
+        print(f"🔮 Prediction: {label} ({confidence:.2%})")
 
         result = smooth_predictions({'label': label, 'confidence': confidence})
         with lock:
@@ -141,6 +168,9 @@ def predict():
         return jsonify(result)
 
     except Exception as e:
+        print(f"❌ Error in predict: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
@@ -149,3 +179,4 @@ def predict():
 # ========================================================================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
