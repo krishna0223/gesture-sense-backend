@@ -16,8 +16,8 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 # CONFIGURATION
 # ========================================================================
 TARGET_SIZE = 200
-CONFIDENCE_THRESHOLD = 0.70
-TRACKING_CONFIDENCE = 0.70
+CONFIDENCE_THRESHOLD = 0.5
+TRACKING_CONFIDENCE = 0.5
 SMOOTHING_WINDOW = 5
 
 # ========================================================================
@@ -179,4 +179,5 @@ def predict():
 # ========================================================================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
 
